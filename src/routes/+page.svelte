@@ -438,37 +438,25 @@
 				labels: historicalData.map((d) => d.timeLabel || ''),
 				datasets: [
 					{
-						label: 'Avg Power (W)',
-						data: historicalData.map((d) => d.power || 0),
-						backgroundColor: historyChartType === 'line' ? 'rgba(211, 47, 47, 0.1)' : '#d32f2f',
-						borderColor: '#d32f2f',
-						borderWidth: 2,
-						borderRadius: 4,
-						tension: 0.3,
-						fill: true,
-						hidden: !vPower
-					},
-					{
-						label: 'Avg Voltage (V)',
-						data: historicalData.map((d) => d.voltage),
-						backgroundColor: historyChartType === 'line' ? 'rgba(46, 139, 87, 0.1)' : '#2e8b57',
+						label: 'Voltage',
+						data: [...get(pChartVolt)],
 						borderColor: '#2e8b57',
-						borderWidth: 2,
-						borderRadius: 4,
-						tension: 0.3,
-						fill: true,
-						hidden: !vVoltage
+						tension: 0,
+						yAxisID: 'y'
 					},
 					{
-						label: 'Avg Current (A)',
-						data: historicalData.map((d) => d.current),
-						backgroundColor: historyChartType === 'line' ? 'rgba(255, 165, 0, 0.1)' : '#ffa500',
+						label: 'Current',
+						data: [...get(pChartCurr)],
 						borderColor: '#ffa500',
-						borderWidth: 2,
-						borderRadius: 4,
-						tension: 0.3,
-						fill: true,
-						hidden: !vCurrent
+						tension: 0,
+						yAxisID: 'y'
+					},
+					{
+						label: 'Power',
+						data: [...get(pChartPower)],
+						borderColor: '#d32f2f',
+						tension: 0,
+						yAxisID: 'y'
 					}
 				]
 			},
@@ -481,7 +469,13 @@
 						title: { display: true, text: 'Time Period' }
 					},
 					y: {
-						title: { display: true, text: 'Value (V / A / W)' }
+						position: 'left',
+						min: 0,
+						suggestedMax: 250,
+						title: {
+							display: true,
+							text: 'Value (V / A / W)'
+						}
 					}
 				}
 			}
@@ -753,29 +747,42 @@
 								data: [...get(pChartCurr)],
 								borderColor: '#ffa500',
 								tension: 0,
-								yAxisID: 'y1',
-								hidden: true
+								yAxisID: 'y'
 							},
 							{
 								label: 'Power',
 								data: [...get(pChartPower)],
 								borderColor: '#d32f2f',
 								tension: 0,
-								yAxisID: 'y',
-								hidden: true
+								yAxisID: 'y'
 							}
 						]
 					},
 					options: {
 						responsive: true,
 						maintainAspectRatio: false,
-						animation: {
-							duration: 800,
-							easing: 'linear'
-						},
 						scales: {
-							y: { position: 'left' },
-							y1: { position: 'right', grid: { drawOnChartArea: false } }
+							x: {
+								title: { display: true, text: 'Time Period' }
+							},
+							y: {
+								position: 'left',
+								min: 0,
+								suggestedMax: 250,
+								title: {
+									display: true,
+									text: 'Value (V / A / W)'
+								},
+								grid: {
+									color: 'rgba(200, 200, 200, 0.1)'
+								}
+							}
+						},
+						plugins: {
+							legend: {
+								display: true,
+								position: 'top'
+							}
 						}
 					}
 				});
