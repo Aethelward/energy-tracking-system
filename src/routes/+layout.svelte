@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import favicon from '$lib/assets/favicon.svg';
 	import { onMount } from 'svelte';
 	import { auth, authApi } from '$lib/firebase';
@@ -21,7 +22,7 @@
 		await authApi.signOut(auth);
 		document.cookie = 'ets_auth=; Path=/; Max-Age=0; SameSite=Lax';
 		if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('ets-authenticated');
-		goto('/login');
+		goto(resolve('/login'));
 	}
 
 	onMount(() => {
@@ -74,7 +75,7 @@
 
 {#if isAuthenticated}
 	<div class="top-nav no-print">
-		<button class="brand-link" onclick={() => window.location.assign('/')}>
+		<button class="brand-link" onclick={() => goto(resolve('/'))}>
 			<img src="/logo.png" alt="Logo" class="nav-logo" />
 			<h1 class="brand-title">Energy Tracking System</h1>
 		</button>
@@ -100,7 +101,7 @@
 					<button
 						class="dropdown-item"
 						onclick={() => {
-							goto('/about');
+							goto(resolve('/about'));
 							isDropdownOpen = false;
 						}}
 					>
@@ -110,7 +111,7 @@
 					<button
 						class="dropdown-item"
 						onclick={() => {
-							goto('/testing');
+							goto(resolve('/testing'));
 							isDropdownOpen = false;
 						}}
 					>
@@ -120,7 +121,7 @@
 					<button
 						class="dropdown-item"
 						onclick={() => {
-							goto('/settings');
+							goto(resolve('/settings'));
 							isDropdownOpen = false;
 						}}
 					>

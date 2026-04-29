@@ -16,9 +16,11 @@
 		pCurrent,
 		pPower,
 		pIsOnline,
-		pAlerts
+		pAlerts,
+		globalEmailCooldown,
+		globalSmsCooldown
 	} from '$lib/store';
-	import { auth, authApi, dbApi, mainDb, secondDb, type DataSnapshot } from '$lib/firebase';
+	import { auth, authApi, dbApi, mainDb, type DataSnapshot } from '$lib/firebase';
 
 	type RealtimeData = {
 		timestamp?: number;
@@ -28,9 +30,55 @@
 		power?: number;
 	};
 
-	// --- SMS Cooldown State ---
-	const lastSmsTimes: Record<string, number> = {};
-	const SMS_COOLDOWN = 5 * 60 * 1000; // 5 minutes in milliseconds
+	const COOLDOWN_TIME = 10 * 60 * 1000; // 10 Minutes in milliseconds
+
+	async function sendEmailAlert(message: string) {
+		if (!userNotifications?.enableEmail || !userNotifications?.email) return;
+
+		const now = Date.now();
+		const lastSent = get(globalEmailCooldown);
+
+		// If 10 minutes haven't passed since the LAST email, abort immediately.
+		if (now - lastSent < COOLDOWN_TIME) return;
+
+		// LOCK THE GLOBAL COOLDOWN IMMEDIATELY to prevent loop-spam
+		globalEmailCooldown.set(now);
+
+		try {
+			await fetch('/api/email', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message, email: userNotifications.email })
+			});
+			console.log(`Email Sent: ${message}`);
+		} catch (err) {
+			globalEmailCooldown.set(0); // Unlock if the network fails
+			console.error('Failed to trigger Email:', err);
+		}
+	}
+
+	async function sendSmsAlert(message: string) {
+		if (!userNotifications?.enableSms || !userNotifications?.phone) return;
+
+		const now = Date.now();
+		const lastSent = get(globalSmsCooldown);
+
+		if (now - lastSent < COOLDOWN_TIME) return;
+
+		globalSmsCooldown.set(now);
+
+		try {
+			await fetch('/api/sms', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ message, phone: userNotifications.phone })
+			});
+			console.log(`SMS Sent: ${message}`);
+		} catch (err) {
+			globalSmsCooldown.set(0);
+			console.error('Failed to trigger SMS:', err);
+		}
+	}
 
 	// --- View States ---
 	let currentView: 'live' | 'history' = 'live';
@@ -91,7 +139,7 @@
 
 	// --- Chart Instances ---
 	let chart: ChartJS<'line', number[], string> | null = null;
-	let historyChart: ChartJS<any, number[], string> | null = null;
+	let historyChart: ChartJS<'bar' | 'line', number[], string> | null = null;
 	let gVolt: ChartJS | null = null;
 	let gAmp: ChartJS | null = null;
 	let ChartCtor: typeof import('chart.js/auto').default | null = null;
@@ -103,14 +151,14 @@
 	// Automatically redraw the gauges when the tween updates
 	animVoltage.subscribe(($val) => {
 		if (gVolt) {
-			(gVolt.data.datasets[0] as any).needleValue = $val;
+			(gVolt.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
 			gVolt.update('none'); // 'none' prevents Chart.js from fighting Svelte's animation
 		}
 	});
 
 	animCurrent.subscribe(($val) => {
 		if (gAmp) {
-			(gAmp.data.datasets[0] as any).needleValue = $val;
+			(gAmp.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
 			gAmp.update('none');
 		}
 	});
@@ -146,7 +194,6 @@
 	}
 
 	const lastEmailTimes: Record<string, number> = {};
-	const EMAIL_COOLDOWN = 5 * 60 * 1000;
 
 	function isTimeInThresholdRange() {
 		if (
@@ -164,28 +211,6 @@
 			return currentTime >= start && currentTime <= end;
 		} else {
 			return currentTime >= start || currentTime <= end;
-		}
-	}
-
-	async function sendEmailAlert(message: string) {
-		if (!userNotifications?.enableEmail) return;
-		const email = userNotifications?.email;
-		if (!email) return;
-
-		const now = Date.now();
-		if (lastEmailTimes[message] && now - lastEmailTimes[message] < EMAIL_COOLDOWN) return;
-
-		try {
-			await fetch('/api/email', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message, email })
-			});
-
-			lastEmailTimes[message] = now;
-			console.log(`Email Sent: ${message}`);
-		} catch (err) {
-			console.error('Failed to trigger Email:', err);
 		}
 	}
 
@@ -217,34 +242,6 @@
 		}
 	}
 
-	async function sendSmsAlert(message: string) {
-		// 1. Check if the user saved a phone number and enabled SMS in Settings
-		if (!userNotifications?.enableSms) return;
-		const phone = userNotifications?.phone;
-		if (!phone) return;
-
-		// 2. Check the cooldown so we don't spam texts
-		const now = Date.now();
-		if (lastSmsTimes[message] && now - lastSmsTimes[message] < SMS_COOLDOWN) {
-			return; // Too soon, skip sending
-		}
-
-		try {
-			// 3. Send the request to our local SvelteKit backend
-			await fetch('/api/sms', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message, phone })
-			});
-
-			// 4. Record the time we sent this specific alert
-			lastSmsTimes[message] = now;
-			console.log(`SMS Sent: ${message}`);
-		} catch (err) {
-			console.error('Failed to trigger SMS:', err);
-		}
-	}
-
 	function checkAlerts(data: RealtimeData) {
 		if (!isTimeInThresholdRange()) return;
 
@@ -256,26 +253,73 @@
 				power: { min: 0, max: 99999 }
 			} as const);
 
-		const pending: string[] = [];
-		if (data.voltage > (activeThresholds.voltage?.max ?? 240))
-			pending.push(`High Voltage: ${data.voltage}V`);
-		if (data.voltage < (activeThresholds.voltage?.min ?? 200))
-			pending.push(`Low Voltage: ${data.voltage}V`);
-		if (data.current > (activeThresholds.current?.max ?? 15))
-			pending.push(`High Current: ${data.current}A`);
+		const pending: { msg: string; type: string }[] = [];
+
+		// --- 1. SYSTEM NORMAL BOUNDS (ALERTS) ---
+		if (data.voltage > 241.5)
+			pending.push({
+				msg: `High Voltage (Critical): ${data.voltage.toFixed(1)}V`,
+				type: 'crit_high_v'
+			});
+		else if (data.voltage < 218.5)
+			pending.push({
+				msg: `Low Voltage (Critical): ${data.voltage.toFixed(1)}V`,
+				type: 'crit_low_v'
+			});
+
+		if (data.current > 80)
+			pending.push({
+				msg: `High Current (Critical): ${data.current.toFixed(1)}A`,
+				type: 'crit_high_c'
+			});
+
+		// --- 2. USER SETTINGS BOUNDS (WARNINGS) ---
 		if (
-			activeThresholds.power &&
-			activeThresholds.power.max &&
+			activeThresholds.voltage?.max !== undefined &&
+			data.voltage > activeThresholds.voltage.max &&
+			data.voltage <= 241.5
+		) {
+			pending.push({
+				msg: `High Voltage (Warning): ${data.voltage.toFixed(1)}V`,
+				type: 'warn_high_v'
+			});
+		}
+		if (
+			activeThresholds.voltage?.min !== undefined &&
+			data.voltage < activeThresholds.voltage.min &&
+			data.voltage >= 218.5
+		) {
+			pending.push({
+				msg: `Low Voltage (Warning): ${data.voltage.toFixed(1)}V`,
+				type: 'warn_low_v'
+			});
+		}
+		if (
+			activeThresholds.current?.max !== undefined &&
+			data.current > activeThresholds.current.max &&
+			data.current <= 80
+		) {
+			pending.push({
+				msg: `High Current (Warning): ${data.current.toFixed(1)}A`,
+				type: 'warn_high_c'
+			});
+		}
+		if (
+			activeThresholds.power?.max !== undefined &&
 			data.power !== undefined &&
 			data.power > activeThresholds.power.max
-		)
-			pending.push(`High Power Load: ${data.power}W`);
+		) {
+			pending.push({
+				msg: `High Power Load (Warning): ${data.power.toFixed(1)}W`,
+				type: 'warn_high_p'
+			});
+		}
 
-		for (const msg of pending) {
-			addAlert(msg);
-			sendBrowserNotification('Energy Tracking Alert', msg);
+		for (const alertObj of pending) {
+			addAlert(alertObj.msg);
+			sendBrowserNotification('Energy Tracking Alert', alertObj.msg);
 
-			let finalMsg = `ETRACKER ALERT: ${msg} detected. Please check the system.`;
+			let finalMsg = `ETRACKER ALERT: ${alertObj.msg} detected. Please check the system.`;
 			sendSmsAlert(finalMsg);
 			sendEmailAlert(finalMsg);
 		}
@@ -336,6 +380,10 @@
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
+				clip: false,
+				layout: {
+					padding: { top: 10, right: 15 }
+				},
 				plugins: {
 					legend: { display: false },
 					tooltip: {
@@ -439,23 +487,41 @@
 				datasets: [
 					{
 						label: 'Voltage',
-						data: [...get(pChartVolt)],
+						data: historicalData.map((d) => d.voltage) as number[],
 						borderColor: '#2e8b57',
-						tension: 0,
+						backgroundColor: '#2e8b57',
+						tension: 0.4,
+						borderWidth: 2,
+						pointRadius: 0,
+						fill: false,
+						spanGaps: true,
+						cubicInterpolationMode: 'monotone',
 						yAxisID: 'y'
 					},
 					{
 						label: 'Current',
-						data: [...get(pChartCurr)],
+						data: historicalData.map((d) => d.current) as number[],
 						borderColor: '#ffa500',
-						tension: 0,
+						backgroundColor: '#ffa500',
+						tension: 0.4,
+						borderWidth: 2,
+						pointRadius: 0,
+						fill: false,
+						spanGaps: true,
+						cubicInterpolationMode: 'monotone',
 						yAxisID: 'y'
 					},
 					{
 						label: 'Power',
-						data: [...get(pChartPower)],
+						data: historicalData.map((d) => d.power) as number[],
 						borderColor: '#d32f2f',
-						tension: 0,
+						backgroundColor: '#d32f2f',
+						tension: 0.4,
+						borderWidth: 2,
+						pointRadius: 0,
+						fill: false,
+						spanGaps: true,
+						cubicInterpolationMode: 'monotone',
 						yAxisID: 'y'
 					}
 				]
@@ -463,6 +529,10 @@
 			options: {
 				responsive: true,
 				maintainAspectRatio: false,
+				clip: false,
+				layout: {
+					padding: { top: 10, right: 15 }
+				},
 				plugins: { tooltip: { mode: 'index', intersect: false } },
 				scales: {
 					x: {
@@ -472,9 +542,13 @@
 						position: 'left',
 						min: 0,
 						suggestedMax: 250,
+						grace: '10%',
 						title: {
 							display: true,
 							text: 'Value (V / A / W)'
+						},
+						grid: {
+							color: 'rgba(200, 200, 200, 0.1)'
 						}
 					}
 				}
@@ -564,7 +638,7 @@
 
 		try {
 			const historyRef = dbApi.query(
-				dbApi.ref(secondDb, 'history'),
+				dbApi.ref(mainDb, 'history'),
 				dbApi.orderByKey(),
 				dbApi.limitToLast(45000)
 			);
@@ -722,8 +796,12 @@
 						'/electricity/energy': 0,
 						'/electricity/status': 'disconnected'
 					};
-					dbApi.update(dbApi.ref(mainDb), updates).catch((err: any) => {
-						console.error('Failed to zero database:', err);
+					dbApi.update(dbApi.ref(mainDb), updates).catch((err: unknown) => {
+						if (err instanceof Error) {
+							console.error('Failed to zero database:', err);
+						} else {
+							console.error('Failed to zero database:', String(err));
+						}
 					});
 				}
 			}, 5000);
@@ -739,21 +817,34 @@
 								label: 'Voltage',
 								data: [...get(pChartVolt)],
 								borderColor: '#2e8b57',
+								backgroundColor: '#2e8b57',
 								tension: 0,
+								borderWidth: 2,
+								pointRadius: 0,
+								fill: false,
+								spanGaps: true,
 								yAxisID: 'y'
 							},
 							{
 								label: 'Current',
 								data: [...get(pChartCurr)],
 								borderColor: '#ffa500',
-								tension: 0,
+								backgroundColor: '#ffa500',
+								borderWidth: 2,
+								pointRadius: 0,
+								fill: false,
+								spanGaps: true,
 								yAxisID: 'y'
 							},
 							{
 								label: 'Power',
 								data: [...get(pChartPower)],
 								borderColor: '#d32f2f',
-								tension: 0,
+								backgroundColor: '#d32f2f',
+								borderWidth: 2,
+								pointRadius: 0,
+								fill: false,
+								spanGaps: true,
 								yAxisID: 'y'
 							}
 						]
@@ -761,6 +852,10 @@
 					options: {
 						responsive: true,
 						maintainAspectRatio: false,
+						clip: false,
+						layout: {
+							padding: { top: 10, right: 15 }
+						},
 						scales: {
 							x: {
 								title: { display: true, text: 'Time Period' }
@@ -769,6 +864,7 @@
 								position: 'left',
 								min: 0,
 								suggestedMax: 250,
+								grace: '10%',
 								title: {
 									display: true,
 									text: 'Value (V / A / W)'
@@ -796,7 +892,7 @@
 				['#f59e0b', '#10b981', '#f59e0b'],
 				['Under Voltage (< 218.5V)', 'Normal (218.5 - 241.5V)', 'Over Voltage (> 241.5V)']
 			);
-			(gVolt.data.datasets[0] as any).needleValue = get(pVoltage);
+			(gVolt.data.datasets[0] as unknown as { needleValue: number }).needleValue = get(pVoltage);
 
 			gAmp = createGauge(
 				'gauge-a',
@@ -805,7 +901,7 @@
 				['#10b981', '#f59e0b', '#ef4444'],
 				['Normal (0 - 80A)', 'Near Trip (81 - 95A)', 'Over Current (> 95A)']
 			);
-			(gAmp.data.datasets[0] as any).needleValue = get(pCurrent);
+			(gAmp.data.datasets[0] as unknown as { needleValue: number }).needleValue = get(pCurrent);
 
 			updateChartVisibility();
 
@@ -831,7 +927,7 @@
 				pChartCurr.set([...(chart.data.datasets[1].data as number[])]);
 				pChartPower.set([...(chart.data.datasets[2].data as number[])]);
 
-				chart.update();
+				chart.update('none');
 			}, 1000);
 
 			await fetchHistoricalData();

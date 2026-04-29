@@ -18,7 +18,8 @@ const config = {
 					'self',
 					'unsafe-inline',
 					'https://*.firebaseio.com',
-					'https://*.firebasedatabase.app'
+					'https://*.firebasedatabase.app',
+					'https://apis.google.com'
 				],
 				'frame-src': ['self', 'https://*.firebaseio.com', 'https://*.firebasedatabase.app']
 			}

@@ -14,3 +14,7 @@ export const pIsOnline = writable<boolean>(true);
 export const pAlerts = writable<{ message: string; time: string }[]>([
 	{ message: 'System Online', time: 'Now' }
 ]);
+
+// Global Notification Cooldowns
+export const globalEmailCooldown = writable<number>(0);
+export const globalSmsCooldown = writable<number>(0);

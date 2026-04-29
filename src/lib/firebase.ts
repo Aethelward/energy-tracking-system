@@ -1,20 +1,12 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
-	PUBLIC_GROUND_FIREBASE_API_KEY,
-	PUBLIC_GROUND_FIREBASE_AUTH_DOMAIN,
-	PUBLIC_GROUND_FIREBASE_DATABASE_URL,
-	PUBLIC_GROUND_FIREBASE_PROJECT_ID,
 	PUBLIC_MAIN_FIREBASE_API_KEY,
 	PUBLIC_MAIN_FIREBASE_APP_ID,
 	PUBLIC_MAIN_FIREBASE_AUTH_DOMAIN,
 	PUBLIC_MAIN_FIREBASE_DATABASE_URL,
 	PUBLIC_MAIN_FIREBASE_MESSAGING_SENDER_ID,
 	PUBLIC_MAIN_FIREBASE_PROJECT_ID,
-	PUBLIC_MAIN_FIREBASE_STORAGE_BUCKET,
-	PUBLIC_SECOND_FIREBASE_API_KEY,
-	PUBLIC_SECOND_FIREBASE_AUTH_DOMAIN,
-	PUBLIC_SECOND_FIREBASE_DATABASE_URL,
-	PUBLIC_SECOND_FIREBASE_PROJECT_ID
+	PUBLIC_MAIN_FIREBASE_STORAGE_BUCKET
 } from '$env/static/public';
 import {
 	getAuth,
@@ -51,20 +43,6 @@ const mainConfig = {
 	appId: PUBLIC_MAIN_FIREBASE_APP_ID
 };
 
-const groundConfig = {
-	apiKey: PUBLIC_GROUND_FIREBASE_API_KEY,
-	authDomain: PUBLIC_GROUND_FIREBASE_AUTH_DOMAIN,
-	databaseURL: PUBLIC_GROUND_FIREBASE_DATABASE_URL,
-	projectId: PUBLIC_GROUND_FIREBASE_PROJECT_ID
-};
-
-const secondConfig = {
-	apiKey: PUBLIC_SECOND_FIREBASE_API_KEY,
-	authDomain: PUBLIC_SECOND_FIREBASE_AUTH_DOMAIN,
-	databaseURL: PUBLIC_SECOND_FIREBASE_DATABASE_URL,
-	projectId: PUBLIC_SECOND_FIREBASE_PROJECT_ID
-};
-
 const requiredMainKeys = [
 	mainConfig.apiKey,
 	mainConfig.authDomain,
@@ -86,12 +64,6 @@ function getOrCreateApp(name: string, config: object): FirebaseApp {
 export const mainApp = getApps().length === 0 ? initializeApp(mainConfig) : getApp();
 export const auth = getAuth(mainApp);
 export const mainDb = getDatabase(mainApp);
-
-const groundApp = getOrCreateApp('groundApp', groundConfig);
-const secondApp = getOrCreateApp('secondApp', secondConfig);
-
-export const groundDb = getDatabase(groundApp);
-export const secondDb = getDatabase(secondApp);
 
 export const authApi = {
 	signInWithEmailAndPassword,

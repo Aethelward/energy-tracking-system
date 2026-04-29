@@ -1,7 +1,7 @@
 <svelte:options runes={false} />
 
 <script lang="ts">
-	import { dbApi, groundDb, secondDb } from '$lib/firebase';
+	import { dbApi, mainDb } from '$lib/firebase';
 	import jsPDF from 'jspdf';
 	import autoTable from 'jspdf-autotable';
 
@@ -103,7 +103,7 @@
 		loading = true;
 		error = '';
 		rows = [];
-		const db = currentFloor === 'ground' ? groundDb : secondDb;
+		const db = mainDb;
 		try {
 			const snap = await dbApi.get(dbApi.ref(db, 'history'));
 			if (!snap.exists()) {

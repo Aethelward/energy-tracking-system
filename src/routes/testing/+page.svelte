@@ -2,6 +2,7 @@
 
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { dbApi, mainDb, auth, authApi, type User } from '$lib/firebase';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -12,7 +13,8 @@
 		mockCurrentStore,
 		deviceStatusStore,
 		sendMockData,
-		toggleSimulation
+		toggleSimulation,
+		ensureSimulatorCleanup
 	} from '$lib/simulator';
 
 	// --- Notifications States ---
@@ -94,6 +96,7 @@
 	let unsubAuth = () => {};
 
 	onMount(() => {
+		ensureSimulatorCleanup();
 		unsubAuth = authApi.onAuthStateChanged(auth, async (user: User | null) => {
 			if (user?.uid) {
 				const notifSnap = await dbApi.get(dbApi.ref(mainDb, `users/${user.uid}/notifications`));
@@ -106,7 +109,7 @@
 		});
 	});
 
-	// Clean up the interval if the user navigates away from the page
+	// Clean up auth subscription if the user navigates away from the page
 	onDestroy(() => {
 		unsubAuth();
 	});
@@ -118,7 +121,7 @@
 
 <div class="testing-page-wrapper">
 	<div class="settings-container">
-		<button class="back-btn" onclick={() => goto('/')}>
+		<button class="back-btn" onclick={() => goto(resolve('/'))}>
 			<i class="fas fa-arrow-left"></i> Back to Dashboard
 		</button>
 

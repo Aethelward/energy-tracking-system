@@ -25,28 +25,60 @@ export async function sendMockData(v: number, c: number, status: string) {
 }
 
 export function toggleSimulation() {
-	if (get(isSimulating)) {
-		// Stop
+	const currentlyRunning = get(isSimulating);
+
+	if (currentlyRunning) {
+		// Stop it
 		isSimulating.set(false);
-		if (simInterval) clearInterval(simInterval);
-		simInterval = null;
+		if (simInterval) {
+			clearInterval(simInterval);
+			simInterval = null;
+		}
 	} else {
-		// Start
+		// Start it
 		isSimulating.set(true);
 		deviceStatusStore.set('connected');
-		simInterval = setInterval(() => {
-			let v = 218.5 + Math.random() * 4; // 218.5V to 222.5V
-			let c = 5 + Math.random() * 10; // 5A to 15A
+		startSimulation();
+	}
+}
 
-			if (get(spikeMode)) {
-				if (Math.random() > 0.85) v = 245 + Math.random() * 10;
-				if (Math.random() > 0.9) c = 85 + Math.random() * 10;
-			}
+export function ensureSimulatorCleanup() {
+	const isRunning = get(isSimulating);
+	const hasInterval = simInterval !== null;
 
-			mockVoltageStore.set(Number(v.toFixed(1)));
-			mockCurrentStore.set(Number(c.toFixed(2)));
+	if (isRunning && !hasInterval) {
+		// Store says running but interval is missing - restart it
+		startSimulation();
+	} else if (!isRunning && hasInterval) {
+		// Store says stopped but interval still exists - clean it up
+		clearInterval(simInterval!);
+		simInterval = null;
+	}
+}
 
-			sendMockData(v, c, 'connected');
-		}, 1000);
+function startSimulation() {
+	if (simInterval) clearInterval(simInterval);
+
+	simInterval = setInterval(() => {
+		let v = 218.5 + Math.random() * 4;
+		let c = 5 + Math.random() * 10;
+
+		if (get(spikeMode)) {
+			if (Math.random() > 0.85) v = 245 + Math.random() * 10;
+			if (Math.random() > 0.9) c = 85 + Math.random() * 10;
+		}
+
+		mockVoltageStore.set(Number(v.toFixed(1)));
+		mockCurrentStore.set(Number(c.toFixed(2)));
+
+		sendMockData(v, c, 'connected');
+	}, 1000);
+}
+
+export function stopSimulator() {
+	isSimulating.set(false);
+	if (simInterval) {
+		clearInterval(simInterval);
+		simInterval = null;
 	}
 }

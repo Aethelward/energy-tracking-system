@@ -13,7 +13,7 @@ export async function POST({ request }) {
 
 	try {
 		const result = await resend.emails.send({
-			from: 'ETRACKER System <onboarding@resend.dev>',
+			from: 'ETracker System <noreply@energy-tracking-system.online>',
 			to: email,
 			subject: '⚠️ ETRACKER Critical Alert',
 			html: `
