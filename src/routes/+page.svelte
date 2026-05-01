@@ -301,6 +301,23 @@
 				power: { min: 0, max: 99999 }
 			} as const);
 
+		const voltEnabled = (userThresholds?.voltage as any)?.enabled ?? true;
+		const currEnabled = (userThresholds?.current as any)?.enabled ?? true;
+		const powerEnabled = (userThresholds?.power as any)?.enabled ?? true;
+
+		if (!voltEnabled) {
+			alerts = alerts.filter((a) => a.key !== 'warn_high_v' && a.key !== 'warn_low_v');
+			pAlerts.set(alerts);
+		}
+		if (!currEnabled) {
+			alerts = alerts.filter((a) => a.key !== 'warn_high_c');
+			pAlerts.set(alerts);
+		}
+		if (!powerEnabled) {
+			alerts = alerts.filter((a) => a.key !== 'warn_high_p');
+			pAlerts.set(alerts);
+		}
+
 		const pending: { msg: string; type: string }[] = [];
 
 		// --- 1. SYSTEM NORMAL BOUNDS (ALERTS) ---
@@ -323,6 +340,7 @@
 
 		// --- 2. USER SETTINGS BOUNDS (WARNINGS) ---
 		if (
+			voltEnabled &&
 			activeThresholds.voltage?.max !== undefined &&
 			data.voltage > activeThresholds.voltage.max &&
 			data.voltage <= 241.5
@@ -333,6 +351,7 @@
 			});
 		}
 		if (
+			voltEnabled &&
 			activeThresholds.voltage?.min !== undefined &&
 			data.voltage < activeThresholds.voltage.min &&
 			data.voltage >= 218.5
@@ -343,6 +362,7 @@
 			});
 		}
 		if (
+			currEnabled &&
 			activeThresholds.current?.max !== undefined &&
 			data.current > activeThresholds.current.max &&
 			data.current <= 80
@@ -353,6 +373,7 @@
 			});
 		}
 		if (
+			powerEnabled &&
 			activeThresholds.power?.max !== undefined &&
 			data.power !== undefined &&
 			data.power > activeThresholds.power.max

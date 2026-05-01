@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { auth, authApi, dbApi, mainDb, type User } from '$lib/firebase';
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 
 	// --- Profile & Threshold States ---
 	let currentUser: User | null = null;
@@ -245,7 +246,7 @@
 
 <div class="settings-page-wrapper">
 	<div class="settings-container">
-		<button class="back-btn" onclick={() => goto('/')}>
+		<button class="back-btn" onclick={() => goto(resolve('/'))}>
 			<i class="fas fa-arrow-left"></i> Back to Dashboard
 		</button>
 
@@ -509,7 +510,7 @@
 				<button class="action-btn btn-outline" onclick={() => (showModal = true)}>
 					<i class="fas fa-sliders-h"></i> Manage Devices
 				</button>
-				<button class="action-btn btn-soft" onclick={() => goto('/about')}>
+				<button class="action-btn btn-soft" onclick={() => goto(resolve('/about'))}>
 					<i class="fas fa-circle-info"></i> About System
 				</button>
 			</div>
@@ -581,7 +582,7 @@
 				</label>
 				{#if checkGround}
 					<div class="panel-options">
-						{#each [1, 2, 3, 4, 5] as panel, i}
+						{#each [1, 2, 3, 4, 5] as panel, i (panel)}
 							<label class="panel-option">
 								<input
 									type="checkbox"
@@ -602,7 +603,7 @@
 				</label>
 				{#if checkSecond}
 					<div class="panel-options">
-						{#each [1, 2, 3, 4, 5] as panel, i}
+						{#each [1, 2, 3, 4, 5] as panel, i (panel)}
 							<label class="panel-option">
 								<input
 									type="checkbox"
@@ -623,7 +624,7 @@
 				</label>
 				{#if checkThird}
 					<div class="panel-options">
-						{#each [1, 2, 3, 4, 5] as panel, i}
+						{#each [1, 2, 3, 4, 5] as panel, i (panel)}
 							<label class="panel-option">
 								<input
 									type="checkbox"
