@@ -367,13 +367,17 @@
 			</div>
 
 			<div style="margin-top: 15px;">
+				<strong>Reminder Schedule</strong>
+				<p class="text-sm" style="color: var(--text-muted); margin-bottom: 10px; margin-top: 5px;">
+					These reminder times are separate from the activation range above.
+				</p>
 				<div class="threshold-grid">
 					<div>
-						<label for="reminder1">Reminder Time 1</label>
+						<label for="reminder1">Reminder Time A</label>
 						<input id="reminder1" class="styled-input" type="time" bind:value={reminderTime1} />
 					</div>
 					<div>
-						<label for="reminder2">Reminder Time 2</label>
+						<label for="reminder2">Reminder Time B</label>
 						<input id="reminder2" class="styled-input" type="time" bind:value={reminderTime2} />
 					</div>
 				</div>

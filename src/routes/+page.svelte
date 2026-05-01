@@ -16,6 +16,7 @@
 		pCurrent,
 		pPower,
 		pIsOnline,
+		type DashboardAlert,
 		pAlerts,
 		globalEmailCooldown,
 		globalSmsCooldown
@@ -90,10 +91,9 @@
 	let current = get(pCurrent);
 	let power = get(pPower);
 	let selectedDataType: 'voltage' | 'current' | 'power' = 'voltage';
-	let alerts: { message: string; time: string }[] = get(pAlerts);
+	let alerts: DashboardAlert[] = get(pAlerts);
 
 	let lastDataTime = Date.now();
-	let lastVoltChangeTime = Date.now();
 	let lastVoltageValue: number | null = null;
 	let isOnline = get(pIsOnline);
 
@@ -145,21 +145,51 @@
 	let ChartCtor: typeof import('chart.js/auto').default | null = null;
 
 	// --- Animated Gauge States ---
+	let isUnmounted = false;
+
 	const animVoltage = tweened(get(pVoltage), { duration: 1000, easing: cubicOut });
 	const animCurrent = tweened(get(pCurrent), { duration: 1000, easing: cubicOut });
 
-	// Automatically redraw the gauges when the tween updates
 	animVoltage.subscribe(($val) => {
-		if (gVolt) {
+		if (isUnmounted || !gVolt) return;
+		try {
 			(gVolt.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
-			gVolt.update('none'); // 'none' prevents Chart.js from fighting Svelte's animation
+			gVolt.update('none');
+		} catch {
+			/* Swallow resize errors */
 		}
 	});
 
 	animCurrent.subscribe(($val) => {
-		if (gAmp) {
+		if (isUnmounted || !gAmp) return;
+		try {
 			(gAmp.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
 			gAmp.update('none');
+		} catch {
+			/* Swallow resize errors */
+		}
+	});
+
+	const unsubVoltAnim = animVoltage.subscribe(($val) => {
+		if (gVolt) {
+			(gVolt.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
+			// Shield against Chart.js resize crashes during unmount
+			try {
+				gVolt.update('none');
+			} catch {
+				/* Swallow resize errors */
+			}
+		}
+	});
+
+	const unsubCurrAnim = animCurrent.subscribe(($val) => {
+		if (gAmp) {
+			(gAmp.data.datasets[0] as unknown as { needleValue: number }).needleValue = $val;
+			try {
+				gAmp.update('none');
+			} catch {
+				/* Swallow resize errors */
+			}
 		}
 	});
 
@@ -168,8 +198,24 @@
 		return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 
-	function addAlert(message: string) {
-		alerts = [{ message, time: nowTime() }, ...alerts].slice(0, 10);
+	function addAlert(message: string, key?: string) {
+		const time = nowTime();
+
+		if (key) {
+			const existingIndex = alerts.findIndex((a) => a.key === key);
+			if (existingIndex !== -1) {
+				const updated = { ...alerts[existingIndex], message, time, key };
+				alerts = [
+					updated,
+					...alerts.slice(0, existingIndex),
+					...alerts.slice(existingIndex + 1)
+				].slice(0, 10);
+				pAlerts.set(alerts);
+				return;
+			}
+		}
+
+		alerts = [{ message, time, key }, ...alerts].slice(0, 10);
 		pAlerts.set(alerts);
 	}
 
@@ -184,16 +230,18 @@
 		}
 	}
 
-	function sendBrowserNotification(title: string, msg: string) {
+	function sendBrowserNotification(title: string, msg: string, key?: string) {
 		if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+		const notificationKey = key ?? msg;
 		const now = Date.now();
-		if (!lastNotificationTimes[msg] || now - lastNotificationTimes[msg] > 300000) {
+		if (
+			!lastNotificationTimes[notificationKey] ||
+			now - lastNotificationTimes[notificationKey] > 300000
+		) {
 			new Notification(title, { body: msg, icon: '/logo.png' });
-			lastNotificationTimes[msg] = now;
+			lastNotificationTimes[notificationKey] = now;
 		}
 	}
-
-	const lastEmailTimes: Record<string, number> = {};
 
 	function isTimeInThresholdRange() {
 		if (
@@ -316,8 +364,8 @@
 		}
 
 		for (const alertObj of pending) {
-			addAlert(alertObj.msg);
-			sendBrowserNotification('Energy Tracking Alert', alertObj.msg);
+			addAlert(alertObj.msg, alertObj.type);
+			sendBrowserNotification('Energy Tracking Alert', alertObj.msg, alertObj.type);
 
 			let finalMsg = `ETRACKER ALERT: ${alertObj.msg} detected. Please check the system.`;
 			sendSmsAlert(finalMsg);
@@ -442,7 +490,6 @@
 		if (!chart) return;
 		if (data.voltage !== lastVoltageValue) {
 			lastVoltageValue = data.voltage;
-			lastVoltChangeTime = Date.now();
 		}
 		lastDataTime = Date.now();
 
@@ -469,14 +516,7 @@
 		);
 		if (!histCtx || !ChartCtor) return;
 
-		let vPower = true;
-		let vVoltage = false;
-		let vCurrent = false;
-
 		if (historyChart) {
-			vPower = historyChart.isDatasetVisible(0);
-			vVoltage = historyChart.isDatasetVisible(1);
-			vCurrent = historyChart.isDatasetVisible(2);
 			historyChart.destroy();
 		}
 
@@ -647,7 +687,8 @@
 			const val = snap.val();
 
 			if (val) {
-				Object.entries(val).forEach(([key, data]: [string, any]) => {
+				Object.entries(val).forEach(([key, data]: [string, unknown]) => {
+					const reading = data as { voltage?: number; current?: number; power?: number };
 					if (key >= startKey && key <= endKey) {
 						let bucketIndex = -1;
 						if (timeframe === 'hour') {
@@ -661,9 +702,9 @@
 						}
 
 						if (bucketIndex >= 0 && bucketIndex < buckets.length) {
-							buckets[bucketIndex].vSum += data.voltage || 0;
-							buckets[bucketIndex].cSum += data.current || 0;
-							buckets[bucketIndex].pSum += data.power || 0;
+							buckets[bucketIndex].vSum += reading.voltage || 0;
+							buckets[bucketIndex].cSum += reading.current || 0;
+							buckets[bucketIndex].pSum += reading.power || 0;
 							buckets[bucketIndex].count += 1;
 						}
 					}
@@ -764,6 +805,8 @@
 	}
 
 	onMount(() => {
+		let isDestroyed = false;
+
 		let unsubThresholds = () => {};
 		let unsubElectricity = () => {};
 		let unsubNotifications = () => {};
@@ -931,6 +974,7 @@
 			}, 1000);
 
 			await fetchHistoricalData();
+			if (isDestroyed) return;
 
 			unsubThresholds = dbApi.onValue(dbApi.ref(mainDb, 'thresholds'), (snap: DataSnapshot) => {
 				userThresholds = snap.val();
@@ -979,6 +1023,12 @@
 			reminderInterval = setInterval(checkReminders, 60000);
 		})();
 		return () => {
+			isUnmounted = true;
+			isDestroyed = true;
+
+			unsubVoltAnim();
+			unsubCurrAnim();
+
 			unsubThresholds();
 			if (unsubNotifications) unsubNotifications();
 			if (unsubElectricity) unsubElectricity();
@@ -1130,7 +1180,7 @@
 					<button class="btn-clear" onclick={clearAlerts}>Clear</button>
 				</div>
 				<ul class="log-list">
-					{#each alerts as alert}
+					{#each alerts as alert (alert)}
 						<li><span>{alert.message}</span><span class="time">{alert.time}</span></li>
 					{:else}
 						<li class="empty">No alerts</li>
@@ -1191,7 +1241,9 @@
 						/>
 						{#if timeframe === 'hour'}
 							<select bind:value={selectedHour} onchange={fetchHistoricalData} class="hour-input">
-								{#each Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0')) as hr}
+								{#each Array.from({ length: 24 }, (_, i) => i
+										.toString()
+										.padStart(2, '0')) as hr (hr)}
 									<option value={hr}>{hr}:00</option>
 								{/each}
 							</select>
@@ -1256,7 +1308,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each historicalData as row}
+							{#each historicalData as row (row.timeLabel)}
 								<tr>
 									<td>{row.timeLabel}</td>
 									<td>{row.voltage.toFixed(2)}</td>

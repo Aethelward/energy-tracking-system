@@ -2,9 +2,9 @@
 
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { dbApi, mainDb, auth, authApi, type User } from '$lib/firebase';
 	import { onDestroy, onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 
 	import {
 		isSimulating,
@@ -13,8 +13,7 @@
 		mockCurrentStore,
 		deviceStatusStore,
 		sendMockData,
-		toggleSimulation,
-		ensureSimulatorCleanup
+		toggleSimulation
 	} from '$lib/simulator';
 
 	// --- Notifications States ---
@@ -26,14 +25,12 @@
 	// --- Simulator States ---
 	let isSending = false;
 
-	// Trigger a single manual injection
 	async function triggerManual() {
 		isSending = true;
 		await sendMockData($mockVoltageStore, $mockCurrentStore, $deviceStatusStore);
 		setTimeout(() => (isSending = false), 500);
 	}
 
-	// Simulate hardware disconnection (Forces 0 values)
 	async function triggerDisconnect() {
 		isSending = true;
 		$deviceStatusStore = 'disconnected';
@@ -96,7 +93,6 @@
 	let unsubAuth = () => {};
 
 	onMount(() => {
-		ensureSimulatorCleanup();
 		unsubAuth = authApi.onAuthStateChanged(auth, async (user: User | null) => {
 			if (user?.uid) {
 				const notifSnap = await dbApi.get(dbApi.ref(mainDb, `users/${user.uid}/notifications`));
@@ -109,7 +105,6 @@
 		});
 	});
 
-	// Clean up auth subscription if the user navigates away from the page
 	onDestroy(() => {
 		unsubAuth();
 	});
@@ -121,7 +116,7 @@
 
 <div class="testing-page-wrapper">
 	<div class="settings-container">
-		<button class="back-btn" onclick={() => goto(resolve('/'))}>
+		<button class="back-btn" on:click={() => goto(resolve('/'))}>
 			<i class="fas fa-arrow-left"></i> Back to Dashboard
 		</button>
 
@@ -151,7 +146,7 @@
 
 			<button
 				class="action-btn {$isSimulating ? 'btn-red' : 'btn-primary'}"
-				onclick={toggleSimulation}
+				on:click={toggleSimulation}
 			>
 				{#if $isSimulating}
 					<i class="fas fa-stop-circle"></i> Stop Simulation
@@ -209,11 +204,11 @@
 			</div>
 
 			<div class="button-row">
-				<button class="action-btn btn-primary" onclick={triggerManual} disabled={isSending}>
+				<button class="action-btn btn-primary" on:click={triggerManual} disabled={isSending}>
 					<i class="fas fa-upload"></i>
 					{isSending ? 'Sending...' : 'Inject Data'}
 				</button>
-				<button class="action-btn btn-outline" onclick={triggerDisconnect} disabled={isSending}>
+				<button class="action-btn btn-outline" on:click={triggerDisconnect} disabled={isSending}>
 					<i class="fas fa-power-off"></i> Force Disconnect
 				</button>
 			</div>
@@ -226,11 +221,11 @@
 			</p>
 
 			<div class="button-row" style="margin-top: 10px;">
-				<button class="action-btn btn-primary" onclick={testEmail} disabled={isSendingEmail}>
+				<button class="action-btn btn-primary" on:click={testEmail} disabled={isSendingEmail}>
 					<i class="fas fa-envelope"></i>
 					{isSendingEmail ? 'Sending...' : 'Test Email'}
 				</button>
-				<button class="action-btn btn-primary" onclick={testSms} disabled={isSendingSms}>
+				<button class="action-btn btn-primary" on:click={testSms} disabled={isSendingSms}>
 					<i class="fas fa-sms"></i>
 					{isSendingSms ? 'Sending...' : 'Test SMS'}
 				</button>

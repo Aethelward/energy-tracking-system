@@ -1,13 +1,29 @@
 import { writable, get } from 'svelte/store';
 import { dbApi, mainDb } from '$lib/firebase';
+import { browser } from '$app/environment';
 
-export const isSimulating = writable(false);
+const isClient = typeof window !== 'undefined' && browser;
+
+declare global {
+	interface Window {
+		_ets_isSimulating: ReturnType<typeof writable<boolean>>;
+		_ets_simInterval: NodeJS.Timeout | null;
+		_ets_listenerAdded: boolean;
+	}
+}
+
+// 1. CREATE THE IMMORTAL STORE
+if (isClient && !window._ets_isSimulating) {
+	const savedState = localStorage.getItem('ets_simulating') === 'true';
+	window._ets_isSimulating = writable(savedState);
+}
+
+export const isSimulating = isClient ? window._ets_isSimulating : writable(false);
+
 export const spikeMode = writable(false);
 export const mockVoltageStore = writable(220);
 export const mockCurrentStore = writable(15);
 export const deviceStatusStore = writable('connected');
-
-let simInterval: ReturnType<typeof setInterval> | null = null;
 
 export async function sendMockData(v: number, c: number, status: string) {
 	const power = v * c;
@@ -24,42 +40,19 @@ export async function sendMockData(v: number, c: number, status: string) {
 	}
 }
 
-export function toggleSimulation() {
-	const currentlyRunning = get(isSimulating);
+// 2. EXPLICIT CONTROLS
+export function startSimulator() {
+	if (!isClient) return;
 
-	if (currentlyRunning) {
-		// Stop it
-		isSimulating.set(false);
-		if (simInterval) {
-			clearInterval(simInterval);
-			simInterval = null;
-		}
-	} else {
-		// Start it
-		isSimulating.set(true);
-		deviceStatusStore.set('connected');
-		startSimulation();
+	window._ets_isSimulating.set(true);
+	deviceStatusStore.set('connected');
+	localStorage.setItem('ets_simulating', 'true');
+
+	if (window._ets_simInterval) {
+		clearInterval(window._ets_simInterval as NodeJS.Timeout);
 	}
-}
 
-export function ensureSimulatorCleanup() {
-	const isRunning = get(isSimulating);
-	const hasInterval = simInterval !== null;
-
-	if (isRunning && !hasInterval) {
-		// Store says running but interval is missing - restart it
-		startSimulation();
-	} else if (!isRunning && hasInterval) {
-		// Store says stopped but interval still exists - clean it up
-		clearInterval(simInterval!);
-		simInterval = null;
-	}
-}
-
-function startSimulation() {
-	if (simInterval) clearInterval(simInterval);
-
-	simInterval = setInterval(() => {
+	window._ets_simInterval = setInterval(() => {
 		let v = 218.5 + Math.random() * 4;
 		let c = 5 + Math.random() * 10;
 
@@ -76,9 +69,40 @@ function startSimulation() {
 }
 
 export function stopSimulator() {
-	isSimulating.set(false);
-	if (simInterval) {
-		clearInterval(simInterval);
-		simInterval = null;
+	if (!isClient) return;
+
+	window._ets_isSimulating.set(false);
+	localStorage.setItem('ets_simulating', 'false');
+
+	if (window._ets_simInterval) {
+		clearInterval(window._ets_simInterval as NodeJS.Timeout);
+		window._ets_simInterval = null;
 	}
+}
+
+export function toggleSimulation() {
+	const currentState = get(window._ets_isSimulating);
+	if (currentState) {
+		stopSimulator();
+	} else {
+		startSimulator();
+	}
+}
+
+// 3. CROSS-TAB SYNC
+if (isClient && !window._ets_listenerAdded) {
+	window._ets_listenerAdded = true;
+
+	window.addEventListener('storage', (e) => {
+		if (e.key === 'ets_simulating') {
+			const shouldRun = e.newValue === 'true';
+			const currentlyRunning = get(window._ets_isSimulating);
+
+			if (shouldRun && !currentlyRunning) {
+				startSimulator();
+			} else if (!shouldRun && currentlyRunning) {
+				stopSimulator();
+			}
+		}
+	});
 }
