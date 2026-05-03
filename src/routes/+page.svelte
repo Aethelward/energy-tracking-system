@@ -297,7 +297,7 @@
 			userThresholds ||
 			({
 				voltage: { min: 200, max: 240 },
-				current: { max: 15 },
+				current: { min: 0, max: 15 },
 				power: { min: 0, max: 99999 }
 			} as const);
 
@@ -305,95 +305,127 @@
 		const currEnabled = (userThresholds?.current as any)?.enabled ?? true;
 		const powerEnabled = (userThresholds?.power as any)?.enabled ?? true;
 
+		// Cleanup inactive alerts logic remains the same...
 		if (!voltEnabled) {
 			alerts = alerts.filter((a) => a.key !== 'warn_high_v' && a.key !== 'warn_low_v');
 			pAlerts.set(alerts);
 		}
 		if (!currEnabled) {
-			alerts = alerts.filter((a) => a.key !== 'warn_high_c');
+			alerts = alerts.filter((a) => a.key !== 'warn_high_c' && a.key !== 'warn_low_c');
 			pAlerts.set(alerts);
 		}
 		if (!powerEnabled) {
-			alerts = alerts.filter((a) => a.key !== 'warn_high_p');
+			alerts = alerts.filter((a) => a.key !== 'warn_high_p' && a.key !== 'warn_low_p');
 			pAlerts.set(alerts);
 		}
 
 		const pending: { msg: string; type: string }[] = [];
 
-		// --- 1. SYSTEM NORMAL BOUNDS (ALERTS) ---
+		// --- 1. SYSTEM BOUND ALERTS (Critical safety limits) ---
 		if (data.voltage > 241.5)
 			pending.push({
-				msg: `High Voltage (Critical): ${data.voltage.toFixed(1)}V`,
+				msg: `System Bound Alert: Over Voltage - ${data.voltage.toFixed(1)}V`,
 				type: 'crit_high_v'
 			});
 		else if (data.voltage < 218.5)
 			pending.push({
-				msg: `Low Voltage (Critical): ${data.voltage.toFixed(1)}V`,
+				msg: `System Bound Alert: Low Voltage - ${data.voltage.toFixed(1)}V`,
 				type: 'crit_low_v'
 			});
 
-		if (data.current > 80)
+		if (data.current > 95)
 			pending.push({
-				msg: `High Current (Critical): ${data.current.toFixed(1)}A`,
+				msg: `System Bound Alert: Over Current - ${data.current.toFixed(1)}A`,
 				type: 'crit_high_c'
 			});
+		else if (data.current > 80)
+			pending.push({
+				msg: `System Bound Alert: Near Trip - ${data.current.toFixed(1)}A`,
+				type: 'crit_near_trip'
+			});
 
-		// --- 2. USER SETTINGS BOUNDS (WARNINGS) ---
+		// --- 2. USER SETTINGS BOUND ALERTS (Preference/Budget Limits) ---
+
+		// Voltage Preferences
 		if (
 			voltEnabled &&
-			activeThresholds.voltage?.max !== undefined &&
+			activeThresholds.voltage?.max &&
 			data.voltage > activeThresholds.voltage.max &&
 			data.voltage <= 241.5
 		) {
 			pending.push({
-				msg: `High Voltage (Warning): ${data.voltage.toFixed(1)}V`,
+				msg: `User Settings Bound Alert: Voltage Exceeded Preference - ${data.voltage.toFixed(1)}V`,
 				type: 'warn_high_v'
 			});
 		}
 		if (
 			voltEnabled &&
-			activeThresholds.voltage?.min !== undefined &&
+			activeThresholds.voltage?.min &&
 			data.voltage < activeThresholds.voltage.min &&
 			data.voltage >= 218.5
 		) {
 			pending.push({
-				msg: `Low Voltage (Warning): ${data.voltage.toFixed(1)}V`,
+				msg: `User Settings Bound Alert: Voltage Below Preference - ${data.voltage.toFixed(1)}V`,
 				type: 'warn_low_v'
 			});
 		}
+
+		// Current Preferences (Including Minimum)
 		if (
 			currEnabled &&
-			activeThresholds.current?.max !== undefined &&
+			activeThresholds.current?.max &&
 			data.current > activeThresholds.current.max &&
 			data.current <= 80
 		) {
 			pending.push({
-				msg: `High Current (Warning): ${data.current.toFixed(1)}A`,
+				msg: `User Settings Bound Alert: Current Limit Exceeded - ${data.current.toFixed(1)}A`,
 				type: 'warn_high_c'
 			});
 		}
 		if (
+			currEnabled &&
+			activeThresholds.current?.min &&
+			data.current < activeThresholds.current.min &&
+			data.current > 0
+		) {
+			pending.push({
+				msg: `User Settings Bound Alert: Current Below Preference - ${data.current.toFixed(1)}A`,
+				type: 'warn_low_c'
+			});
+		}
+
+		// Power Preferences (Including Minimum)
+		if (
 			powerEnabled &&
-			activeThresholds.power?.max !== undefined &&
+			activeThresholds.power?.max &&
 			data.power !== undefined &&
 			data.power > activeThresholds.power.max
 		) {
 			pending.push({
-				msg: `High Power Load (Warning): ${data.power.toFixed(1)}W`,
+				msg: `User Settings Bound Alert: Power Usage Limit Exceeded - ${data.power.toFixed(1)}W`,
 				type: 'warn_high_p'
+			});
+		}
+		if (
+			powerEnabled &&
+			activeThresholds.power?.min &&
+			data.power !== undefined &&
+			data.power < activeThresholds.power.min &&
+			data.power > 0
+		) {
+			pending.push({
+				msg: `User Settings Bound Alert: Power Below Preference - ${data.power.toFixed(1)}W`,
+				type: 'warn_low_p'
 			});
 		}
 
 		for (const alertObj of pending) {
 			addAlert(alertObj.msg, alertObj.type);
 			sendBrowserNotification('Energy Tracking Alert', alertObj.msg, alertObj.type);
-
-			let finalMsg = `ETRACKER ALERT: ${alertObj.msg} detected. Please check the system.`;
-			sendSmsAlert(finalMsg);
-			sendEmailAlert(finalMsg);
+			sendSmsAlert(`ETRACKER ALERT: ${alertObj.msg}.`);
+			sendEmailAlert(`ETRACKER ALERT: ${alertObj.msg}.`);
 		}
 	}
-
 	function updateInsights() {
 		const first = Math.floor(Math.random() * insightData.length);
 		const second = (first + 1) % insightData.length;
