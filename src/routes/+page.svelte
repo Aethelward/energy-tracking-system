@@ -1036,19 +1036,34 @@
 			unsubElectricity = dbApi.onValue(dbApi.ref(mainDb, 'electricity'), (snap: DataSnapshot) => {
 				const val = snap.val();
 				if (val) {
-					const isZeroData = val.voltage === 0 && val.current === 0;
+					// 1. Check if there are actual, living numbers coming from the database
+					const hasActiveReadings = val.voltage > 0 || val.current > 0 || val.power > 0;
 
-					if (val.status === 'disconnected' || isZeroData) {
+					// 2. Only go offline if there are no active readings AND the status/numbers say it's dead
+					if (
+						!hasActiveReadings &&
+						(val.status === 'disconnected' || (val.voltage === 0 && val.current === 0))
+					) {
 						if (isOnline) {
 							isOnline = false;
 							forceZeroUI();
 							addAlert('DEVICE DISCONNECTED');
 						}
 					} else {
+						// 3. If there are active numbers, force the system online!
 						if (!isOnline) {
 							isOnline = true;
 							addAlert('Device Reconnected');
+
+							// Optional: Auto-heal the database status if the hardware forgot to change it
+							if (val.status === 'disconnected') {
+								dbApi
+									.update(dbApi.ref(mainDb, 'electricity'), { status: 'connected' })
+									.catch(() => {});
+							}
 						}
+
+						// 4. Process the incoming data normally
 						processRealtimeData({
 							timestamp: Date.now(),
 							voltage: val.voltage || 0,
